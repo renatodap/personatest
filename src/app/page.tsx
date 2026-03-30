@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 
 type Screen = "landing" | "q1" | "q2" | "q3" | "loading" | "surprise";
@@ -52,6 +52,8 @@ function TypewriterText({
 }) {
   const [displayed, setDisplayed] = useState("");
   const [done, setDone] = useState(false);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
     let i = 0;
@@ -61,11 +63,11 @@ function TypewriterText({
       if (i >= text.length) {
         clearInterval(interval);
         setDone(true);
-        onComplete?.();
+        onCompleteRef.current?.();
       }
     }, 70);
     return () => clearInterval(interval);
-  }, [text, onComplete]);
+  }, [text]);
 
   return (
     <span>
@@ -75,15 +77,27 @@ function TypewriterText({
   );
 }
 
+const traits = [
+  "Authentic to the core",
+  "Impossible to ignore",
+  "Highest compatibility match found",
+];
+
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("landing");
   const [transitioning, setTransitioning] = useState(false);
 
-  // Surprise phase states
+  // Result card progressive reveal
   const [surprisePhase, setSurprisePhase] = useState<SurprisePhase>("result-card");
+  const [showHeader, setShowHeader] = useState(false);
+  const [visibleTraits, setVisibleTraits] = useState(0);
+  const [showCompatLine, setShowCompatLine] = useState(false);
   const [showName, setShowName] = useState(false);
+
+  // Photo reveal
+  const [showPhoto, setShowPhoto] = useState(false);
+  const [showTypewriter, setShowTypewriter] = useState(false);
   const [showSecondLine, setShowSecondLine] = useState(false);
-  const [typewriterDone, setTypewriterDone] = useState(false);
 
   const goTo = useCallback((next: Screen) => {
     setTransitioning(true);
@@ -93,7 +107,7 @@ export default function Home() {
     }, 300);
   }, []);
 
-  // Loading → surprise transition
+  // Loading → surprise
   useEffect(() => {
     if (screen === "loading") {
       const timer = setTimeout(() => goTo("surprise"), 3500);
@@ -101,38 +115,56 @@ export default function Home() {
     }
   }, [screen, goTo]);
 
-  // Surprise phase orchestration
+  // Result card: staggered reveal
   useEffect(() => {
-    if (screen !== "surprise") return;
+    if (screen !== "surprise" || surprisePhase !== "result-card") return;
 
-    if (surprisePhase === "result-card") {
-      // Show name after 1 second
-      const nameTimer = setTimeout(() => setShowName(true), 1000);
-      return () => clearTimeout(nameTimer);
-    }
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    // Header fades in at 0.5s
+    timers.push(setTimeout(() => setShowHeader(true), 500));
+
+    // Traits appear one by one: 1.5s, 2.3s, 3.1s
+    timers.push(setTimeout(() => setVisibleTraits(1), 1500));
+    timers.push(setTimeout(() => setVisibleTraits(2), 2300));
+    timers.push(setTimeout(() => setVisibleTraits(3), 3100));
+
+    // "Highest compatibility with:" at 4.2s
+    timers.push(setTimeout(() => setShowCompatLine(true), 4200));
+
+    // "Renato" at 5.5s
+    timers.push(setTimeout(() => setShowName(true), 5500));
+
+    // Card fades out at 8s (gives 2.5s to read name)
+    timers.push(setTimeout(() => setSurprisePhase("card-fadeout"), 8000));
+
+    return () => timers.forEach(clearTimeout);
   }, [screen, surprisePhase]);
 
-  useEffect(() => {
-    if (!showName) return;
-    // After name appears, wait 1.5s then fade out card
-    const fadeTimer = setTimeout(() => setSurprisePhase("card-fadeout"), 1500);
-    return () => clearTimeout(fadeTimer);
-  }, [showName]);
-
+  // Card fadeout → photo reveal
   useEffect(() => {
     if (surprisePhase !== "card-fadeout") return;
-    // After fade-out animation (1.5s), show photo
-    const revealTimer = setTimeout(() => setSurprisePhase("photo-reveal"), 1500);
-    return () => clearTimeout(revealTimer);
+    const timer = setTimeout(() => setSurprisePhase("photo-reveal"), 1500);
+    return () => clearTimeout(timer);
   }, [surprisePhase]);
 
-  // Typewriter → second line
+  // Photo reveal: staggered
   useEffect(() => {
-    if (typewriterDone) {
-      const timer = setTimeout(() => setShowSecondLine(true), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [typewriterDone]);
+    if (surprisePhase !== "photo-reveal") return;
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    // Photo fades in immediately (via CSS animation)
+    timers.push(setTimeout(() => setShowPhoto(true), 100));
+    // Typewriter starts after photo is visible (1.5s)
+    timers.push(setTimeout(() => setShowTypewriter(true), 1800));
+
+    return () => timers.forEach(clearTimeout);
+  }, [surprisePhase]);
+
+  // Typewriter done → second line after 2s
+  const handleTypewriterDone = useCallback(() => {
+    setTimeout(() => setShowSecondLine(true), 2000);
+  }, []);
 
   const questionIndex =
     screen === "q1" ? 0 : screen === "q2" ? 1 : screen === "q3" ? 2 : -1;
@@ -183,15 +215,12 @@ export default function Home() {
                 />
               ))}
             </div>
-
             <p className="text-sm text-zinc-500 font-medium">
               {questionIndex + 1} / 3
             </p>
-
             <h2 className="text-2xl sm:text-3xl font-semibold text-center leading-snug">
               {questions[questionIndex].question}
             </h2>
-
             <div className="grid grid-cols-2 gap-3 w-full">
               {questions[questionIndex].options.map((opt) => (
                 <button
@@ -225,46 +254,62 @@ export default function Home() {
         {/* Surprise — Phase 1: Result Card */}
         {screen === "surprise" && surprisePhase !== "photo-reveal" && (
           <div
-            className={`animate-fade-in flex flex-col items-center transition-opacity duration-[1500ms] ${
+            className={`flex flex-col items-center transition-opacity duration-[1500ms] ${
               surprisePhase === "card-fadeout" ? "opacity-0" : "opacity-100"
             }`}
           >
             <div className="w-full max-w-md border border-zinc-800 rounded-2xl bg-zinc-900/70 p-8 sm:p-10 text-center">
-              <p className="text-xs font-semibold tracking-[0.25em] text-zinc-500 uppercase">
-                Your Personality Type
-              </p>
-
-              <h2 className="mt-4 text-4xl sm:text-5xl font-bold tracking-tight">
-                The One <span className="text-violet-400">&#10022;</span>
-              </h2>
-
-              <p className="mt-2 text-[11px] font-semibold tracking-[0.2em] text-violet-400/80 uppercase">
-                Rarest Type &bull; Top 0.1%
-              </p>
-
-              <div className="my-6 h-px bg-zinc-800" />
-
-              <div className="flex flex-col gap-3 text-left text-sm text-zinc-300">
-                <p>
-                  <span className="text-violet-400">&#10022;</span> Authentic to
-                  the core
+              {/* Header — fades in */}
+              <div
+                className="transition-opacity duration-700"
+                style={{ opacity: showHeader ? 1 : 0 }}
+              >
+                <p className="text-xs font-semibold tracking-[0.25em] text-zinc-500 uppercase">
+                  Your Personality Type
                 </p>
-                <p>
-                  <span className="text-violet-400">&#10022;</span> Impossible
-                  to ignore
-                </p>
-                <p>
-                  <span className="text-violet-400">&#10022;</span> Highest
-                  compatibility match found
+                <h2 className="mt-4 text-4xl sm:text-5xl font-bold tracking-tight">
+                  The One <span className="text-violet-400">&#10022;</span>
+                </h2>
+                <p className="mt-2 text-[11px] font-semibold tracking-[0.2em] text-violet-400/80 uppercase">
+                  Rarest Type &bull; Top 0.1%
                 </p>
               </div>
 
-              <div className="my-6 h-px bg-zinc-800" />
+              {/* Divider */}
+              <div
+                className="my-6 h-px bg-zinc-800 transition-opacity duration-500"
+                style={{ opacity: visibleTraits > 0 ? 1 : 0 }}
+              />
 
-              <p className="text-sm text-zinc-500">
-                Highest compatibility with:
-              </p>
-              <div className="h-10 flex items-center justify-center">
+              {/* Traits — appear one by one */}
+              <div className="flex flex-col gap-3 text-left text-sm text-zinc-300 min-h-[5.5rem]">
+                {traits.map((trait, i) => (
+                  <p
+                    key={trait}
+                    className="transition-all duration-500"
+                    style={{
+                      opacity: visibleTraits > i ? 1 : 0,
+                      transform: visibleTraits > i ? "translateY(0)" : "translateY(8px)",
+                    }}
+                  >
+                    <span className="text-violet-400">&#10022;</span> {trait}
+                  </p>
+                ))}
+              </div>
+
+              {/* Divider + Compatibility */}
+              <div
+                className="transition-opacity duration-500"
+                style={{ opacity: showCompatLine ? 1 : 0 }}
+              >
+                <div className="my-6 h-px bg-zinc-800" />
+                <p className="text-sm text-zinc-500">
+                  Highest compatibility with:
+                </p>
+              </div>
+
+              {/* Name */}
+              <div className="h-12 flex items-center justify-center">
                 {showName && (
                   <p className="text-2xl font-bold text-white animate-fade-in">
                     Renato
@@ -277,8 +322,12 @@ export default function Home() {
 
         {/* Surprise — Phase 2: Photo Reveal */}
         {screen === "surprise" && surprisePhase === "photo-reveal" && (
-          <div className="animate-fade-in-slow flex flex-col items-center gap-8 text-center">
-            <div className="relative w-[280px] h-[280px] sm:w-[350px] sm:h-[350px] rounded-2xl overflow-hidden shadow-2xl shadow-violet-500/10">
+          <div className="flex flex-col items-center gap-8 text-center">
+            {/* Photo */}
+            <div
+              className="relative w-[280px] h-[280px] sm:w-[350px] sm:h-[350px] rounded-2xl overflow-hidden shadow-2xl shadow-violet-500/10 transition-opacity duration-[1500ms]"
+              style={{ opacity: showPhoto ? 1 : 0 }}
+            >
               <Image
                 src="/foto.jpg"
                 alt=""
@@ -288,13 +337,16 @@ export default function Home() {
               />
             </div>
 
+            {/* Text */}
             <div className="flex flex-col gap-4">
-              <p className="text-2xl sm:text-3xl font-semibold">
-                <TypewriterText
-                  text="tu eres mi favorita ❤️"
-                  onComplete={() => setTypewriterDone(true)}
-                />
-              </p>
+              {showTypewriter && (
+                <p className="text-2xl sm:text-3xl font-semibold">
+                  <TypewriterText
+                    text="tu eres mi favorita ❤️"
+                    onComplete={handleTypewriterDone}
+                  />
+                </p>
+              )}
 
               {showSecondLine && (
                 <p className="text-xl text-zinc-400 animate-fade-in-delayed">
