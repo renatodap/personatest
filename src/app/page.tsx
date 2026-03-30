@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 
 type Screen = "landing" | "q1" | "q2" | "q3" | "loading" | "surprise";
+type SurprisePhase = "result-card" | "card-fadeout" | "photo-reveal";
 
 const questions: {
   screen: Screen;
@@ -42,7 +43,13 @@ const questions: {
   },
 ];
 
-function TypewriterText({ text, onComplete }: { text: string; onComplete?: () => void }) {
+function TypewriterText({
+  text,
+  onComplete,
+}: {
+  text: string;
+  onComplete?: () => void;
+}) {
   const [displayed, setDisplayed] = useState("");
   const [done, setDone] = useState(false);
 
@@ -71,6 +78,10 @@ function TypewriterText({ text, onComplete }: { text: string; onComplete?: () =>
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("landing");
   const [transitioning, setTransitioning] = useState(false);
+
+  // Surprise phase states
+  const [surprisePhase, setSurprisePhase] = useState<SurprisePhase>("result-card");
+  const [showName, setShowName] = useState(false);
   const [showSecondLine, setShowSecondLine] = useState(false);
   const [typewriterDone, setTypewriterDone] = useState(false);
 
@@ -82,6 +93,7 @@ export default function Home() {
     }, 300);
   }, []);
 
+  // Loading → surprise transition
   useEffect(() => {
     if (screen === "loading") {
       const timer = setTimeout(() => goTo("surprise"), 3500);
@@ -89,6 +101,32 @@ export default function Home() {
     }
   }, [screen, goTo]);
 
+  // Surprise phase orchestration
+  useEffect(() => {
+    if (screen !== "surprise") return;
+
+    if (surprisePhase === "result-card") {
+      // Show name after 1 second
+      const nameTimer = setTimeout(() => setShowName(true), 1000);
+      return () => clearTimeout(nameTimer);
+    }
+  }, [screen, surprisePhase]);
+
+  useEffect(() => {
+    if (!showName) return;
+    // After name appears, wait 1.5s then fade out card
+    const fadeTimer = setTimeout(() => setSurprisePhase("card-fadeout"), 1500);
+    return () => clearTimeout(fadeTimer);
+  }, [showName]);
+
+  useEffect(() => {
+    if (surprisePhase !== "card-fadeout") return;
+    // After fade-out animation (1.5s), show photo
+    const revealTimer = setTimeout(() => setSurprisePhase("photo-reveal"), 1500);
+    return () => clearTimeout(revealTimer);
+  }, [surprisePhase]);
+
+  // Typewriter → second line
   useEffect(() => {
     if (typewriterDone) {
       const timer = setTimeout(() => setShowSecondLine(true), 2000);
@@ -96,8 +134,13 @@ export default function Home() {
     }
   }, [typewriterDone]);
 
-  const questionIndex = screen === "q1" ? 0 : screen === "q2" ? 1 : screen === "q3" ? 2 : -1;
-  const nextScreen: Record<string, Screen> = { q1: "q2", q2: "q3", q3: "loading" };
+  const questionIndex =
+    screen === "q1" ? 0 : screen === "q2" ? 1 : screen === "q3" ? 2 : -1;
+  const nextScreen: Record<string, Screen> = {
+    q1: "q2",
+    q2: "q3",
+    q3: "loading",
+  };
 
   return (
     <div className="flex flex-1 items-center justify-center min-h-screen px-6">
@@ -179,8 +222,61 @@ export default function Home() {
           </div>
         )}
 
-        {/* Surprise */}
-        {screen === "surprise" && (
+        {/* Surprise — Phase 1: Result Card */}
+        {screen === "surprise" && surprisePhase !== "photo-reveal" && (
+          <div
+            className={`animate-fade-in flex flex-col items-center transition-opacity duration-[1500ms] ${
+              surprisePhase === "card-fadeout" ? "opacity-0" : "opacity-100"
+            }`}
+          >
+            <div className="w-full max-w-md border border-zinc-800 rounded-2xl bg-zinc-900/70 p-8 sm:p-10 text-center">
+              <p className="text-xs font-semibold tracking-[0.25em] text-zinc-500 uppercase">
+                Your Personality Type
+              </p>
+
+              <h2 className="mt-4 text-4xl sm:text-5xl font-bold tracking-tight">
+                The One <span className="text-violet-400">&#10022;</span>
+              </h2>
+
+              <p className="mt-2 text-[11px] font-semibold tracking-[0.2em] text-violet-400/80 uppercase">
+                Rarest Type &bull; Top 0.1%
+              </p>
+
+              <div className="my-6 h-px bg-zinc-800" />
+
+              <div className="flex flex-col gap-3 text-left text-sm text-zinc-300">
+                <p>
+                  <span className="text-violet-400">&#10022;</span> Authentic to
+                  the core
+                </p>
+                <p>
+                  <span className="text-violet-400">&#10022;</span> Impossible
+                  to ignore
+                </p>
+                <p>
+                  <span className="text-violet-400">&#10022;</span> Highest
+                  compatibility match found
+                </p>
+              </div>
+
+              <div className="my-6 h-px bg-zinc-800" />
+
+              <p className="text-sm text-zinc-500">
+                Highest compatibility with:
+              </p>
+              <div className="h-10 flex items-center justify-center">
+                {showName && (
+                  <p className="text-2xl font-bold text-white animate-fade-in">
+                    Renato
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Surprise — Phase 2: Photo Reveal */}
+        {screen === "surprise" && surprisePhase === "photo-reveal" && (
           <div className="animate-fade-in-slow flex flex-col items-center gap-8 text-center">
             <div className="relative w-[280px] h-[280px] sm:w-[350px] sm:h-[350px] rounded-2xl overflow-hidden shadow-2xl shadow-violet-500/10">
               <Image
@@ -201,7 +297,7 @@ export default function Home() {
               </p>
 
               {showSecondLine && (
-                <p className="text-xl text-zinc-400 animate-fade-in-delayed" style={{ animationDelay: "0s" }}>
+                <p className="text-xl text-zinc-400 animate-fade-in-delayed">
                   te quiero
                 </p>
               )}
